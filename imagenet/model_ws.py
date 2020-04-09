@@ -112,9 +112,9 @@ class NASNet(BasicUnit):
                     stride = s
                 else:
                     stride = 1
-            block = WSMobileInvertedResidualBlock(in_channels, width, stride)
-            in_channels = width
-            self.blocks.append(block)
+                block = WSMobileInvertedResidualBlock(in_channels, width, stride)
+                in_channels = width
+                self.blocks.append(block)
 
         self.feature_mix_layer = ConvLayer(in_channels, 1280, 1, 1, 1, 1, False, False, True, 'relu6', 0, 'weight_bn_act')
         self.global_avg_pooling = nn.AdaptiveAvgPool2d(1)
