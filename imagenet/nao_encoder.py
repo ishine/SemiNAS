@@ -69,10 +69,8 @@ class Encoder(nn.Module):
             ratio = self.source_length // self.length
             x = x.view(-1, self.source_length // ratio, ratio * self.hidden_size)
         out, hidden = self.rnn(x)
-        if self.source_length != self.length:
-            x = x.repeat(1, 1, 2)
-        out = (out + x) * math.sqrt(0.5)
         out = self.out_proj(out)
+        out = (out + x) * math.sqrt(0.5)
         out = F.normalize(out, 2, dim=-1)
         encoder_outputs = out
         encoder_hidden = hidden
