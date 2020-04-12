@@ -48,7 +48,7 @@ parser.add_argument('--batch_size', type=int, default=100)
 parser.add_argument('--lr', type=float, default=0.001)
 parser.add_argument('--optimizer', type=str, default='adam')
 parser.add_argument('--grad_bound', type=float, default=5.0)
-parser.add_argument('--iteration', type=float, default=2)
+parser.add_argument('--iteration', type=int, default=2)
 args = parser.parse_args()
 
 log_format = '%(asctime)s %(message)s'
