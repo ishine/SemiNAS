@@ -29,7 +29,7 @@ parser.add_argument('--arch', type=str, default=None)
 parser.add_argument('--dropout', type=float, default=0)
 parser.add_argument('--no_decay_keys', type=str, default='bn', choices=['None', 'bn', 'bn#bias', 'bn#classifier'])
 parser.add_argument('--batch_size', type=int, default=256)
-parser.add_argument('--eval_batch_size', type=int, default=500)
+parser.add_argument('--eval_batch_size', type=int, default=256)
 parser.add_argument('--epochs', type=int, default=300)
 parser.add_argument('--model_init', type=str, default='he_fout', choices=['he_fin', 'he_fout'])
 parser.add_argument('--lr', type=float, default=0.05, help='init learning rate')
@@ -235,7 +235,7 @@ def main():
     args.device_count = torch.cuda.device_count() if torch.cuda.is_available() else 1
     args.lr = args.lr
     args.batch_size = args.batch_size
-    args.eval_batch_size = args.eval_batch_size * args.device_count
+    args.eval_batch_size = args.eval_batch_size
     args.width_stages = [int(val) for val in args.width_stages.split(',')]
     args.n_cell_stages = [int(val) for val in args.n_cell_stages.split(',')]
     args.stride_stages = [int(val) for val in args.stride_stages.split(',')]

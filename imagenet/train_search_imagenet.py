@@ -27,8 +27,8 @@ parser.add_argument('--zip_file', action='store_true', default=False)
 parser.add_argument('--lazy_load', action='store_true', default=False)
 parser.add_argument('--output_dir', type=str, default='models')
 parser.add_argument('--seed', type=int, default=1)
-parser.add_argument('--batch_size', type=int, default=128)
-parser.add_argument('--eval_batch_size', type=int, default=500)
+parser.add_argument('--batch_size', type=int, default=512)
+parser.add_argument('--eval_batch_size', type=int, default=512)
 parser.add_argument('--layers', type=int, default=21)
 parser.add_argument('--dropout', type=float, default=0)
 parser.add_argument('--model_init', type=str, default='he_fout', choices=['he_fin', 'he_fout'])
@@ -37,7 +37,7 @@ parser.add_argument('--max_num_updates', type=int, default=1000)
 parser.add_argument('--grad_clip', type=float, default=0)
 parser.add_argument('--weight_decay', type=float, default=4e-5)
 parser.add_argument('--arch_pool', type=str, default=None)
-parser.add_argument('--lr', type=float, default=0.1)
+parser.add_argument('--lr', type=float, default=0.4)
 parser.add_argument('--lr_scheduler', type=str, default='cosine', choices=['cosine', 'linear'])
 parser.add_argument('--label_smooth', type=float, default=0.1, help='label smoothing')
 parser.add_argument('--gamma', type=float, default=0.97, help='learning rate decay')
@@ -399,9 +399,9 @@ def main():
     cudnn.deterministic = True
 
     args.device_count = torch.cuda.device_count() if torch.cuda.is_available() else 1
-    args.lr = args.lr * args.device_count
-    args.batch_size = args.batch_size * args.device_count
-    args.eval_batch_size = args.eval_batch_size * args.device_count
+    args.lr = args.lr
+    args.batch_size = args.batch_size
+    args.eval_batch_size = args.eval_batch_size
     args.width_stages = [int(val) for val in args.width_stages.split(',')]
     args.n_cell_stages = [int(val) for val in args.n_cell_stages.split(',')]
     args.stride_stages = [int(val) for val in args.stride_stages.split(',')]
