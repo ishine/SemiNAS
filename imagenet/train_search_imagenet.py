@@ -239,80 +239,6 @@ def child_valid(valid_queue, model, arch_pool, criterion, log_interval=1):
     return valid_acc_list
 
 
-def train_and_evaluate(archs, train_queue, valid_queue, model=None, log_interval=100, max_num_updates=1000):
-    res = []
-    train_criterion = nn.CrossEntropyLoss().cuda()
-    eval_criterion = nn.CrossEntropyLoss().cuda()
-    objs = utils.AvgrageMeter()
-    top1 = utils.AvgrageMeter()
-    top5 = utils.AvgrageMeter()
-    for i, arch in enumerate(archs):
-        objs.reset()
-        top1.reset()
-        top5.reset()
-        logging.info('Train and evaluate the {} arch'.format(i+1))
-        if model is None:
-            model = NASNet(args.width_stages, args.n_cell_stages, args.stride_stages, args.dropout)
-            #logging.info("param size = %d", utils.count_parameters(model))
-            if torch.cuda.device_count() > 1:
-                logging.info("Use %d %s", torch.cuda.device_count(), "GPUs !")
-                model = nn.DataParallel(model)
-            model = model.cuda()
-        optimizer = torch.optim.SGD(
-            model.parameters(),
-            args.lr,
-            momentum=0.9,
-            weight_decay=args.weight_decay,
-        )
-        model.train()
-        step = 0
-        for _, (input, target) in enumerate(train_queue):
-            input = utils.move_to_cuda(input)
-            target = utils.move_to_cuda(target)
-
-            optimizer.zero_grad()
-            # sample an arch to train
-            logits = model(input, arch)
-            loss = train_criterion(logits, target)
-            loss.backward()
-            optimizer.step()
-            
-            prec1, prec5 = utils.accuracy(logits, target, topk=(1, 5))
-            n = input.size(0)
-            objs.update(loss.data, n)
-            top1.update(prec1.data, n)
-            top5.update(prec5.data, n)
-            
-            step += 1
-            if step % log_interval == 0:
-                logging.info('Train %03d loss %e top1 %f top5 %f', step+1, objs.avg, top1.avg, top5.avg)
-            if step == max_num_updates:
-                break
-
-        objs.reset()
-        top1.reset()
-        top5.reset()
-        with torch.no_grad():
-            model.eval()
-            for step, (input, target) in enumerate(valid_queue):
-                input = utils.move_to_cuda(input)
-                target = utils.move_to_cuda(target)
-            
-                logits = model(input, arch, bn_train=True)
-                loss = eval_criterion(logits, target)
-            
-                prec1, prec5 = utils.accuracy(logits, target, topk=(1, 5))
-                n = input.size(0)
-                objs.update(loss.data, n)
-                top1.update(prec1.data, n)
-                top5.update(prec5.data, n)
-            
-                if (step+1) % 100 == 0:
-                    logging.info('valid %03d %e %f %f', step+1, objs.avg, top1.avg, top5.avg)
-        res.append(top1.avg)
-    return res
-
-
 def controller_train(train_queue, model, optimizer):
     objs = utils.AvgrageMeter()
     mse = utils.AvgrageMeter()
@@ -531,13 +457,9 @@ def main():
         logging.info("Generate %d new archs", len(child_arch_pool))
 
     logging.info('Finish Searching')
-    logging.info('Reranking top 5 architectures')
-    # reranking top 5
+    
     top_archs = arch_pool[:5]
-    top_archs_perf = train_and_evaluate(top_archs, train_queue, valid_queue)
-    top_archs_sorted_indices = np.argsort(top_archs_perf)[::-1]
-    top_archs = [top_archs[i] for i in top_archs_sorted_indices]
-    top_archs_perf = [top_archs_perf[i] for i in top_archs_sorted_indices]
+    top_archs_perf = arch_pool_valid_acc[:5]
     with open(os.path.join(args.output_dir, 'arch_pool.final'), 'w') as fa:
         with open(os.path.join(args.output_dir, 'arch_pool.perf.final'), 'w') as fp:
             for arch, perf in zip(top_archs, top_archs_perf):
