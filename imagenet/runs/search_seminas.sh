@@ -12,7 +12,7 @@ python train_search_imagenet.py \
   --output_dir=$OUTPUT_DIR \
   --num_workers=24 \
   --lazy_load \
-  --batch_size=128 \
-  --eval_batch_size=128 \
+  --batch_size=512 \
+  --eval_batch_size=512 \
   --max_num_updates=20000 \
   --lr=0.4 | tee -a $OUTPUT_DIR/train.log

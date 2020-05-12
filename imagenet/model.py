@@ -1,44 +1,14 @@
-import logging
-import copy
+import os
+import sys
 import math
+import time
+import numpy as np
+import logging
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from layers import BasicUnit, ConvLayer, LinearLayer, MBInvertedConvLayer, set_layer_from_config
-from utils import OPERATIONS
-
-
-class WSMobileInvertedResidualBlock(BasicUnit):
-    def __init__(self, in_channels, out_channels, stride):
-        super(WSMobileInvertedResidualBlock, self).__init__()
-
-        self.in_channels = in_channels
-        self.out_channels = out_channels
-        self.stride = stride
-        self.mobile_inverted_conv = nn.ModuleList()
-
-        for k, config in OPERATIONS.items():
-            config = copy.copy(config)
-            name = config.get('name')
-            if name != 'ZeroLayer':
-                config['in_channels'] = in_channels
-                config['out_channels'] = out_channels
-            config['stride'] = stride
-            layer = set_layer_from_config(config)
-            self.mobile_inverted_conv.append(layer)
-
-    def forward(self, x, op_id):
-        conv = self.mobile_inverted_conv[op_id-1]
-        if conv.is_zero_layer():
-            res = x
-        elif self.stride != 1 or self.in_channels != self.out_channels:
-            res = conv(x)
-        else:
-            conv_x = conv(x)
-            skip_x = x
-            res = skip_x + conv_x
-        return res
-
+from layers import *
+    
 
 class MobileInvertedResidualBlock(BasicUnit):
     def __init__(self, mobile_inverted_conv, shortcut):
@@ -59,6 +29,12 @@ class MobileInvertedResidualBlock(BasicUnit):
         return res
 
     @property
+    def unit_str(self):
+        return '(%s, %s)' % (
+            self.mobile_inverted_conv.unit_str, self.shortcut.unit_str if self.shortcut is not None else None
+        )
+
+    @property
     def config(self):
         return {
             'name': MobileInvertedResidualBlock.__name__,
@@ -72,70 +48,68 @@ class MobileInvertedResidualBlock(BasicUnit):
         shortcut = set_layer_from_config(config['shortcut'])
         return MobileInvertedResidualBlock(mobile_inverted_conv, shortcut)
 
+    def get_flops(self, x):
+        flops1, _ = self.mobile_inverted_conv.get_flops(x)
+        if self.shortcut:
+            flops2, _ = self.shortcut.get_flops(x)
+        else:
+            flops2 = 0
+
+        return flops1 + flops2, self.forward(x)
+
 
 class NASNet(BasicUnit):
 
-    def __init__(self, width_stages, n_cell_stages, stride_stages, dropout=0):
+    def __init__(self, first_conv, blocks, feature_mix_layer, classifier):
         super(NASNet, self).__init__()
 
-        self.width_stages = width_stages
-        self.n_cell_stages = n_cell_stages
-        self.stride_stages = stride_stages
-        
-        in_channels = 32
-        first_cell_width = 16
-        
-        # first conv layer
-        self.first_conv = ConvLayer(3, in_channels, 3, 2, 1, 1, False, False, True, 'relu6', 0, 'weight_bn_act')
-        
-        # first block
-        first_block_config = {
-            "name": "MobileInvertedResidualBlock",
-            "mobile_inverted_conv": {
-                "name": "MBInvertedConvLayer",
-                "in_channels": in_channels,
-                "out_channels": first_cell_width,
-                "kernel_size": 3,
-                "stride": 1,
-                "expand_ratio": 1
-            },
-            "shortcut": None
-        }
-        self.first_block = MobileInvertedResidualBlock.build_from_config(first_block_config)
-        in_channels = first_cell_width
-
-        # blocks
-        self.blocks = nn.ModuleList()
-        for width, n_cell, s in zip(self.width_stages, self.n_cell_stages, self.stride_stages):
-            for i in range(n_cell):
-                if i == 0:
-                    stride = s
-                else:
-                    stride = 1
-                block = WSMobileInvertedResidualBlock(in_channels, width, stride)
-                in_channels = width
-                self.blocks.append(block)
-
-        self.feature_mix_layer = ConvLayer(in_channels, 1280, 1, 1, 1, 1, False, False, True, 'relu6', 0, 'weight_bn_act')
+        self.first_conv = first_conv
+        self.blocks = nn.ModuleList(blocks)
+        self.feature_mix_layer = feature_mix_layer
         self.global_avg_pooling = nn.AdaptiveAvgPool2d(1)
-        self.classifier = LinearLayer(1280, 1000, True, False, None, dropout, 'weight_bn_act')
+        self.classifier = classifier
 
-    def forward(self, x, arch, bn_train=False):
-        if bn_train:
-            for m in self.modules():
-                if isinstance(m, nn.BatchNorm1d):
-                    m.train()
+    def forward(self, x):
         x = self.first_conv(x)
-        x = self.first_block(x)
-        for i, block in enumerate(self.blocks):
-            x = block(x, arch[i])
-        #x = self.last_block(x)
+        for block in self.blocks:
+            x = block(x)
         if self.feature_mix_layer:
             x = self.feature_mix_layer(x)
         x = self.global_avg_pooling(x)
         x = x.view(x.size(0), -1)  # flatten
         x = self.classifier(x)
         return x
+
+    @property
+    def unit_str(self):
+        _str = ''
+        for block in self.blocks:
+            _str += block.unit_str + '\n'
+        return _str
+
+    @property
+    def config(self):
+        return {
+            'name': NASNet.__name__,
+            'bn': self.get_bn_param(),
+            'first_conv': self.first_conv.config,
+            'feature_mix_layer': self.feature_mix_layer.config if self.feature_mix_layer is not None else None,
+            'classifier': self.classifier.config,
+            'blocks': [
+                block.config for block in self.blocks
+            ],
+        }
+
+    @staticmethod
+    def build_from_config(config):
+        first_conv = set_layer_from_config(config['first_conv'])
+        feature_mix_layer = set_layer_from_config(config['feature_mix_layer'])
+        classifier = set_layer_from_config(config['classifier'])
+        blocks = []
+        for block_config in config['blocks']:
+            blocks.append(MobileInvertedResidualBlock.build_from_config(block_config))
+
+        return NASNet(first_conv, blocks, feature_mix_layer, classifier)
 
     def get_flops(self, x):
         flop, x = self.first_conv.get_flops(x)
